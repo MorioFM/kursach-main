@@ -4,6 +4,7 @@
 import flet as ft
 from typing import Callable
 import hashlib
+from settings.logger import app_logger
 
 
 class LoginView(ft.Container):
@@ -44,7 +45,7 @@ class LoginView(ft.Container):
         self.content = ft.Column([
             ft.Container(height=100),
             ft.Icon(ft.Icons.SCHOOL, size=80, color=ft.Colors.BLUE),
-            ft.Text("Система управления детским садом", size=24, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+            ft.Text("Система управления детским садом", size=24, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, width=400),
             ft.Container(height=50),
             self.username_field,
             self.password_field,
@@ -52,10 +53,11 @@ class LoginView(ft.Container):
             ft.Container(height=20),
             self.login_button,
             ft.Container(height=20),
-            ft.Text("Логин: admin, Пароль: admin", size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True)
+            #ft.Text("Логин: admin, Пароль: admin", size=12, color=ft.Colors.GREY_600, text_align=ft.TextAlign.CENTER)
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, expand=True)
         
         self.alignment = ft.alignment.center
+        self.expand = True
     
     def handle_login(self, e):
         """Обработка входа в систему"""
@@ -71,14 +73,19 @@ class LoginView(ft.Container):
         # Проверка через базу данных
         user = self.db.authenticate_user(username, password)
         if user:
+            # Логируем вход
+            app_logger.log('LOGIN', username, details=f"Role: {user['role']}")
+            
             # Сохраняем состояние авторизации
             if self.page:
                 self.page.client_storage.set("is_logged_in", "true")
                 self.page.client_storage.set("username", user['username'])
                 self.page.client_storage.set("user_role", user['role'])
+                self.page.client_storage.set("user_id", user['user_id'])
             
             self.on_login_success()
         else:
+            app_logger.log('LOGIN_FAILED', username, level='WARNING')
             self.error_text.value = "Неверный логин или пароль"
             if self.page:
                 self.page.update()

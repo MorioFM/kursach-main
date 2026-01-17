@@ -10,6 +10,7 @@ from components import ConfirmDialog, SearchBar
 from dialogs import show_confirm_dialog
 from settings.config import GENDERS
 from pages_styles.styles import AppStyles
+from settings.logger import app_logger
 
 
 class ChildrenView(ft.Container):
@@ -215,7 +216,14 @@ class ChildrenView(ft.Container):
         """Удалить ребенка"""
         def on_yes(e):
             try:
+                child = self.db.get_child_by_id(int(child_id))
+                child_name = f"{child['last_name']} {child['first_name']}" if child else 'Unknown'
+                
                 self.db.delete_child(int(child_id))
+                
+                username = self.page.client_storage.get("username") if self.page else None
+                app_logger.log('DELETE', username, 'Child', f"Deleted child: {child_name}")
+                
                 self.load_children(self.search_query)
                 if self.on_refresh:
                     self.on_refresh()
@@ -290,10 +298,15 @@ class ChildrenView(ft.Container):
                 'enrollment_date': self.enrollment_date_field.value
             }
             
+            username = self.page.client_storage.get("username") if self.page else None
+            child_name = f"{child_data['last_name']} {child_data['first_name']}"
+            
             if self.selected_child:
                 self.db.update_child(self.selected_child['child_id'], **child_data)
+                app_logger.log('UPDATE', username, 'Child', f"Updated child: {child_name}")
             else:
                 self.db.add_child(**child_data)
+                app_logger.log('CREATE', username, 'Child', f"Created child: {child_name}")
             
             self.form_container.visible = False
             self.load_children(self.search_query)
@@ -393,8 +406,8 @@ class ChildrenView(ft.Container):
                     height=300
                 ),
                 actions=[
-                    ft.TextButton("Отмена", on_click=close_dialog),
-                    ft.ElevatedButton("Сохранить", on_click=save_relations)
+                    ft.ElevatedButton("Сохранить", on_click=save_relations),
+                    ft.TextButton("Отмена", on_click=close_dialog)
                 ]
             )
             

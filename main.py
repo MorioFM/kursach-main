@@ -15,8 +15,10 @@ from view.settings_view import SettingsView
 from view.home_view import HomeView
 from view.login_view import LoginView
 from view.users_view import UsersView
+from view.logs_view import LogsView
 from navigation_drawer import AppNavigationDrawer
 from settings.config import APP_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, DATABASE_NAME
+from settings.logger import app_logger
 
 
 def main(page: ft.Page):
@@ -46,6 +48,8 @@ def main(page: ft.Page):
 
     def logout():
         """Выход из системы"""
+        username = page.client_storage.get("username")
+        app_logger.log('LOGOUT', username)
         page.client_storage.remove("is_logged_in")
         page.client_storage.remove("username")
         show_login()
@@ -128,7 +132,11 @@ def init_main_app(page, header_container, theme_switch):
     
     # Проверяем роль пользователя
     user_role = page.client_storage.get("user_role")
+    user_id = page.client_storage.get("user_id")
     is_admin = user_role == "admin"
+    
+    # Получаем права доступа пользователя
+    user_permissions = db.get_user_permissions(user_id) if user_id and not is_admin else {}
     
     # Контейнер для текущего представления
     content_container = ft.Container(expand=True, key="content_container")
@@ -141,8 +149,9 @@ def init_main_app(page, header_container, theme_switch):
     parents_view = ParentsView(db, lambda: refresh_current_view(), page)
     attendance_view = AttendanceView(db, lambda: refresh_current_view(), page)
     events_view = EventsView(db, lambda: refresh_current_view(), page)
-    settings_view = SettingsView(page, theme_switch)
+    settings_view = SettingsView(page, theme_switch, db)
     users_view = UsersView(db, lambda: refresh_current_view(), page) if is_admin else None
+    logs_view = LogsView(page) if is_admin else None
     
     # Создаем electronic_journal_view после добавления страницы
     electronic_journal_view = None
@@ -172,9 +181,23 @@ def init_main_app(page, header_container, theme_switch):
         elif current_view[0] == users_view:
             if users_view:
                 users_view.load_users()
+        elif current_view[0] == logs_view:
+            if logs_view:
+                logs_view.load_logs()
     
     def switch_view(view_name, e=None):
         """Переключить представление"""
+        # Проверяем права доступа (кроме settings, users и logs)
+        if not is_admin and view_name not in ["settings", "users", "logs"]:
+            if not user_permissions.get(view_name, True):
+                page.snack_bar = ft.SnackBar(
+                    content=ft.Text("У вас нет доступа к этой странице"),
+                    bgcolor=ft.Colors.ERROR
+                )
+                page.snack_bar.open = True
+                page.update()
+                return
+        
         view_map = {
             "home": home_view,
             "children": children_view,
@@ -185,7 +208,8 @@ def init_main_app(page, header_container, theme_switch):
             "electronic_journal": electronic_journal_view,
             "events": events_view,
             "settings": settings_view,
-            "users": users_view
+            "users": users_view,
+            "logs": logs_view
         }
         
         view = view_map.get(view_name)
@@ -219,13 +243,16 @@ def init_main_app(page, header_container, theme_switch):
         elif view == users_view:
             if users_view:
                 users_view.load_users()
+        elif view == logs_view:
+            if logs_view:
+                logs_view.load_logs()
         
         page.drawer.open = False
         page.update()
 
 
 
-    page.drawer = AppNavigationDrawer(switch_view, is_admin)
+    page.drawer = AppNavigationDrawer(switch_view, is_admin, user_permissions)
     
     # Добавляем элементы на страницу
     page.add(header_container, ft.Divider(), content_container)

@@ -137,6 +137,17 @@ class User(BaseModel):
         table_name = 'users'
 
 
+class UserPermission(BaseModel):
+    """Модель прав доступа пользователя"""
+    user = ForeignKeyField(User, backref='permissions', column_name='user_id')
+    page_name = CharField(null=False)  # Название страницы
+    can_access = BooleanField(default=True)
+    
+    class Meta:
+        table_name = 'user_permissions'
+        primary_key = CompositeKey('user', 'page_name')
+
+
 class KindergartenDB:
     """Класс для работы с базой данных детского сада через Peewee ORM"""
     
@@ -176,7 +187,7 @@ class KindergartenDB:
     
     def create_tables(self):
         """Создать таблицы в базе данных"""
-        db.create_tables([Teacher, Group, Parent, Child, ParentChild, AttendanceRecord, MedicalRecord, User])
+        db.create_tables([Teacher, Group, Parent, Child, ParentChild, AttendanceRecord, MedicalRecord, User, UserPermission])
         # Создаем администратора по умолчанию
         try:
             User.get(User.username == 'admin')
@@ -261,6 +272,20 @@ class KindergartenDB:
             return {'user_id': user.user_id, 'username': user.username, 'role': user.role}
         except:
             return None
+    
+    def get_user_permissions(self, user_id: int):
+        """Получить права доступа пользователя"""
+        permissions = UserPermission.select().where(UserPermission.user == user_id)
+        return {p.page_name: p.can_access for p in permissions}
+    
+    def set_user_permission(self, user_id: int, page_name: str, can_access: bool):
+        """Установить право доступа"""
+        UserPermission.replace(user=user_id, page_name=page_name, can_access=can_access).execute()
+    
+    def get_all_users(self):
+        """Получить всех пользователей"""
+        users = User.select()
+        return [{'user_id': u.user_id, 'username': u.username, 'role': u.role} for u in users]
     
 
     

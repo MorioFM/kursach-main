@@ -7,6 +7,7 @@ from components import SearchBar
 from dialogs import show_confirm_dialog
 from settings.config import PRIMARY_COLOR
 from pages_styles.styles import AppStyles
+from settings.logger import app_logger
 
 
 class ParentsView(ft.Container):
@@ -259,7 +260,13 @@ class ParentsView(ft.Container):
 
         def on_yes(e):
             try:
+                parent = self.db.get_parent_by_id(int(parent_id))
+                parent_name = f"{parent['last_name']} {parent['first_name']}" if parent else 'Unknown'
+                
                 self.db.delete_parent(int(parent_id))
+                
+                username = self.page.client_storage.get("username") if self.page else None
+                app_logger.log('DELETE', username, 'Parent', f"Deleted parent: {parent_name}")
                 self.load_parents(self.search_query)
                 if self.on_refresh:
                     self.on_refresh()
@@ -361,6 +368,9 @@ class ParentsView(ft.Container):
             return
         
         try:
+            username = self.page.client_storage.get("username") if self.page else None
+            parent_name = f"{self.last_name_field.value} {self.first_name_field.value}"
+            
             if self.selected_parent:
                 # Обновление
                 # Собираем полный номер телефона
@@ -377,6 +387,7 @@ class ParentsView(ft.Container):
                     email=self.email_field.value or None,
                     address=self.address_field.value or None
                 )
+                app_logger.log('UPDATE', username, 'Parent', f"Updated parent: {parent_name}")
                 self.show_success("Родитель успешно обновлен")
             else:
                 # Добавление
@@ -393,6 +404,7 @@ class ParentsView(ft.Container):
                     email=self.email_field.value or None,
                     address=self.address_field.value or None
                 )
+                app_logger.log('CREATE', username, 'Parent', f"Created parent: {parent_name}")
                 self.show_success("Родитель успешно добавлен")
             
             self.form_container.visible = False
@@ -442,3 +454,5 @@ class ParentsView(ft.Container):
             )
             self.page.snack_bar.open = True
             self.page.update()
+
+

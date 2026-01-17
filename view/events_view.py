@@ -7,6 +7,7 @@ from typing import Callable
 
 from dialogs import show_confirm_dialog
 from pages_styles.styles import AppStyles
+from settings.logger import app_logger
 
 
 class EventsView(ft.Container):
@@ -233,9 +234,16 @@ class EventsView(ft.Container):
     def delete_event(self, event_id: str):
         """Удалить мероприятие"""
         def on_yes(e):
+            event = next((ev for ev in self.events_storage if ev['event_id'] == int(event_id)), None)
+            event_name = event['name'] if event else 'Unknown'
+            
             self.events_storage = [event for event in self.events_storage if event['event_id'] != int(event_id)]
             if self.page and hasattr(self.page, 'client_storage'):
                 self.page.client_storage.set("events_storage", self.events_storage)
+            
+            username = self.page.client_storage.get("username") if self.page else None
+            app_logger.log('DELETE', username, 'Event', f"Deleted event: {event_name}")
+            
             self.load_events()
             if self.on_refresh:
                 self.on_refresh()
@@ -378,6 +386,8 @@ class EventsView(ft.Container):
                 if teacher:
                     teacher_name = f"{teacher['last_name']} {teacher['first_name']}"
             
+            username = self.page.client_storage.get("username") if self.page else None
+            
             if self.selected_event:
                 # Обновление существующего мероприятия
                 new_event = {
@@ -393,6 +403,7 @@ class EventsView(ft.Container):
                     if event['event_id'] == self.selected_event['event_id']:
                         self.events_storage[i] = new_event
                         break
+                app_logger.log('UPDATE', username, 'Event', f"Updated event: {self.event_name_field.value}")
             else:
                 # Создание нового мероприятия
                 new_event = {
@@ -405,6 +416,7 @@ class EventsView(ft.Container):
                     'groups': selected_groups
                 }
                 self.events_storage.append(new_event)
+                app_logger.log('CREATE', username, 'Event', f"Created event: {self.event_name_field.value}")
             
             # Сохраняем в client_storage
             if self.page and hasattr(self.page, 'client_storage'):

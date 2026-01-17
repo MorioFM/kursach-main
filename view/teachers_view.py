@@ -7,6 +7,7 @@ from components import SearchBar
 from dialogs import show_confirm_dialog
 from settings.config import PRIMARY_COLOR
 from pages_styles.styles import AppStyles
+from settings.logger import app_logger
 
 
 class TeachersView(ft.Container):
@@ -235,6 +236,9 @@ class TeachersView(ft.Container):
 
         def on_yes(e):
             try:
+                teacher = self.db.get_teacher_by_id(int(teacher_id))
+                teacher_name = f"{teacher['last_name']} {teacher['first_name']}" if teacher else 'Unknown'
+                
                 groups = [g for g in self.db.get_all_groups() if g['teacher_id'] == int(teacher_id)]
                 if groups:
                     group_names = ", ".join(g['group_name'] for g in groups)
@@ -244,6 +248,9 @@ class TeachersView(ft.Container):
                     )
                     return
                 self.db.delete_teacher(int(teacher_id))
+                
+                username = self.page.client_storage.get("username") if self.page else None
+                app_logger.log('DELETE', username, 'Teacher', f"Deleted teacher: {teacher_name}")
                 self.load_teachers(self.search_query)
                 if self.on_refresh:
                     self.on_refresh()
@@ -365,6 +372,9 @@ class TeachersView(ft.Container):
             return
         
         try:
+            username = self.page.client_storage.get("username") if self.page else None
+            teacher_name = f"{self.last_name_field.value} {self.first_name_field.value}"
+            
             if self.selected_teacher:
                 # Обновление
                 # Собираем полный номер телефона
@@ -384,6 +394,7 @@ class TeachersView(ft.Container):
                     education=self.education_field.value or None,
                     experience=int(self.experience_field.value) if self.experience_field.value and self.experience_field.value.isdigit() else None
                 )
+                app_logger.log('UPDATE', username, 'Teacher', f"Updated teacher: {teacher_name}")
                 self.show_success("Воспитатель успешно обновлен")
             else:
                 # Добавление
@@ -403,6 +414,7 @@ class TeachersView(ft.Container):
                     education=self.education_field.value or None,
                     experience=int(self.experience_field.value) if self.experience_field.value and self.experience_field.value.isdigit() else None
                 )
+                app_logger.log('CREATE', username, 'Teacher', f"Created teacher: {teacher_name}")
                 self.show_success("Воспитатель успешно добавлен")
             
             self.form_container.visible = False
@@ -455,3 +467,4 @@ class TeachersView(ft.Container):
             )
             self.page.snack_bar.open = True
             self.page.update()
+

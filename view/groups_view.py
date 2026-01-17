@@ -7,6 +7,7 @@ from components import InfoCard
 from dialogs import show_confirm_dialog
 from settings.config import AGE_CATEGORIES
 from pages_styles.styles import AppStyles
+from settings.logger import app_logger
 
 
 class GroupsView(ft.Container):
@@ -221,7 +222,14 @@ class GroupsView(ft.Container):
         """Удалить группу"""
         def on_yes(e):
             try:
+                group = self.db.get_group_by_id(int(group_id))
+                group_name = group['group_name'] if group else 'Unknown'
+                
                 self.db.delete_group(int(group_id))
+                
+                username = self.page.client_storage.get("username") if self.page else None
+                app_logger.log('DELETE', username, 'Group', f"Deleted group: {group_name}")
+                
                 self.load_groups()
                 if self.on_refresh:
                     self.on_refresh()
@@ -264,7 +272,6 @@ class GroupsView(ft.Container):
     
     def save_group(self, e):
         """Сохранить группу"""
-        # Проверка обязательных полей
         if not self.validate_fields():
             return
         
@@ -273,24 +280,27 @@ class GroupsView(ft.Container):
             if self.teacher_dropdown.value and self.teacher_dropdown.value != "0":
                 teacher_id = int(self.teacher_dropdown.value)
             
+            username = self.page.client_storage.get("username") if self.page else None
+            group_name = self.group_name_field.value
+            
             new_group_id = None
             if self.selected_group:
-                # Обновление
                 group_id = self.selected_group['group_id']
                 self.db.update_group(
                     group_id,
-                    group_name=self.group_name_field.value,
+                    group_name=group_name,
                     age_category=self.age_category_dropdown.value,
                     teacher_id=teacher_id
                 )
                 new_group_id = group_id
+                app_logger.log('UPDATE', username, 'Group', f"Updated group: {group_name}")
             else:
-                # Добавление
                 new_group_id = self.db.add_group(
-                    group_name=self.group_name_field.value,
+                    group_name=group_name,
                     age_category=self.age_category_dropdown.value,
                     teacher_id=teacher_id
                 )
+                app_logger.log('CREATE', username, 'Group', f"Created group: {group_name}")
 
             # Обновляем состав группы
             if new_group_id:
