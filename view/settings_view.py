@@ -19,6 +19,9 @@ class SettingsView(ft.Container):
         self.theme_switch = theme_switch
         self.db = db
         
+        # Проверяем роль пользователя
+        is_admin = page.client_storage.get("user_role") == "admin" if page else False
+        
         # Секция темы
         theme_section = ft.Container(
             content=ft.Column([
@@ -118,8 +121,8 @@ class SettingsView(ft.Container):
             ft.Container(height=20),
             theme_section,
             ft.Container(height=20),
-            data_section,
-            ft.Container(height=20),
+            data_section if is_admin else ft.Container(),
+            ft.Container(height=20) if is_admin else ft.Container(),
             app_section
         ], spacing=10, expand=True, scroll=ft.ScrollMode.AUTO)
     

@@ -13,7 +13,7 @@ from settings.logger import app_logger
 class GroupsView(ft.Container):
     """Представление для управления группами"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh
@@ -21,6 +21,7 @@ class GroupsView(ft.Container):
         self.selected_group = None
         self.current_page = 0
         self.items_per_page = 8
+        self.user_group_id = user_group_id  # Группа пользователя для фильтрации
         
         # Поля формы
         self.group_name_field = AppStyles.text_field("Название группы", required=True, autofocus=True)
@@ -28,10 +29,19 @@ class GroupsView(ft.Container):
         
         self.age_category_dropdown = AppStyles.dropdown_field("Возрастная категория", [ft.DropdownOption(k, v) for k, v in AGE_CATEGORIES.items()], required=True)
         self.age_category_error = AppStyles.error_text()
-        self.teacher_dropdown = ft.Dropdown(
-            label="Воспитатель",
-            width=300,
-            options=[]
+        
+        # Список воспитателей для назначения в группу
+        self.teachers_list_view = ft.ListView(expand=True, spacing=5)
+        self.teachers_container = ft.Container(
+            content=ft.Column([
+                ft.Text("Воспитатели группы", weight=ft.FontWeight.BOLD),
+                self.teachers_list_view
+            ]),
+            padding=10,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=5,
+            height=150,
+            margin=ft.margin.only(top=10)
         )
 
         # Список детей для назначения в группу
@@ -60,7 +70,7 @@ class GroupsView(ft.Container):
                 self.group_name_error,
                 self.age_category_dropdown,
                 self.age_category_error,
-                self.teacher_dropdown,
+                self.teachers_container,
                 self.children_container,
                 ft.Row([
                     self.save_button,
@@ -131,6 +141,9 @@ class GroupsView(ft.Container):
     def load_groups(self):
         """Загрузка списка групп"""
         groups = self.db.get_all_groups()
+        # Фильтруем по группе пользователя
+        if self.user_group_id:
+            groups = [g for g in groups if g['group_id'] == self.user_group_id]
         self.all_groups = groups
         self.update_pagination()
         if self.page:
@@ -173,7 +186,9 @@ class GroupsView(ft.Container):
     
     def _create_group_item(self, group):
         """Создать элемент списка для группы"""
-        teacher_name = group.get('teacher_name', 'Не назначен')
+        teachers = self.db.get_teachers_by_group(group['group_id'])
+        teacher_names = ", ".join([t.get('full_name', '') for t in teachers]) if teachers else "Не назначены"
+        
         try:
             children_count = len(self.db.get_children_by_group(group['group_id']))
         except Exception:
@@ -181,7 +196,7 @@ class GroupsView(ft.Container):
         
         return ft.ListTile(
             title=ft.Text(group['group_name'], weight=ft.FontWeight.BOLD),
-            subtitle=ft.Text(f"{AGE_CATEGORIES.get(group['age_category'], group['age_category'])} | {teacher_name} | Детей: {children_count}"),
+            subtitle=ft.Text(f"{AGE_CATEGORIES.get(group['age_category'], group['age_category'])} | {teacher_names} | Детей: {children_count}"),
             trailing=ft.PopupMenuButton(
                 tooltip="",
                 items=[
@@ -195,9 +210,9 @@ class GroupsView(ft.Container):
         """Показать форму добавления"""
         self.selected_group = None
         self.clear_form()
-        self.load_teachers()
         self.form_container.content.controls[0].value = "Добавить группу"
         self.form_container.visible = True
+        self._load_teachers_for_form()
         self._load_children_for_form()
         if self.page:
             self.page.update()
@@ -209,9 +224,8 @@ class GroupsView(ft.Container):
             self.selected_group = group
             self.group_name_field.value = group['group_name']
             self.age_category_dropdown.value = group['age_category']
-            self.teacher_dropdown.value = str(group['teacher_id']) if group['teacher_id'] else "0"
             
-            self.load_teachers()
+            self._load_teachers_for_form(group_id=int(group_id))
             self._load_children_for_form(group_id=int(group_id))
             self.form_container.content.controls[0].value = "Редактировать группу"
             self.form_container.visible = True
@@ -276,10 +290,6 @@ class GroupsView(ft.Container):
             return
         
         try:
-            teacher_id = None
-            if self.teacher_dropdown.value and self.teacher_dropdown.value != "0":
-                teacher_id = int(self.teacher_dropdown.value)
-            
             username = self.page.client_storage.get("username") if self.page else None
             group_name = self.group_name_field.value
             
@@ -290,7 +300,7 @@ class GroupsView(ft.Container):
                     group_id,
                     group_name=group_name,
                     age_category=self.age_category_dropdown.value,
-                    teacher_id=teacher_id
+                    teacher_id=None
                 )
                 new_group_id = group_id
                 app_logger.log('UPDATE', username, 'Group', f"Updated group: {group_name}")
@@ -298,12 +308,13 @@ class GroupsView(ft.Container):
                 new_group_id = self.db.add_group(
                     group_name=group_name,
                     age_category=self.age_category_dropdown.value,
-                    teacher_id=teacher_id
+                    teacher_id=None
                 )
                 app_logger.log('CREATE', username, 'Group', f"Created group: {group_name}")
 
             # Обновляем состав группы
             if new_group_id:
+                self._update_group_teachers(new_group_id)
                 self._update_group_children(new_group_id)
 
             self.form_container.visible = False
@@ -327,9 +338,51 @@ class GroupsView(ft.Container):
         """Очистить форму"""
         self.group_name_field.value = ""
         self.age_category_dropdown.value = None
-        self.teacher_dropdown.value = "0"
+        self.teachers_list_view.controls.clear()
         self.children_list_view.controls.clear()
         self.clear_field_errors()
+
+    def _load_teachers_for_form(self, group_id: int | None = None):
+        """Загружает список воспитателей в форму для выбора."""
+        self.teachers_list_view.controls.clear()
+        all_teachers = self.db.get_all_teachers()
+        
+        teachers_in_group_ids = []
+        if group_id:
+            teachers_in_group = self.db.get_teachers_by_group(group_id)
+            teachers_in_group_ids = [t['teacher_id'] for t in teachers_in_group]
+
+        for teacher in all_teachers:
+            is_in_current_group = teacher['teacher_id'] in teachers_in_group_ids
+            
+            full_name = teacher.get('full_name', '')
+            
+            checkbox = ft.Checkbox(
+                label=full_name,
+                value=is_in_current_group,
+                data=teacher['teacher_id']
+            )
+            self.teachers_list_view.controls.append(checkbox)
+    
+    def _update_group_teachers(self, group_id: int):
+        """Обновляет состав воспитателей в группе на основе выбора в форме."""
+        selected_teacher_ids = {
+            cb.data for cb in self.teachers_list_view.controls if cb.value
+        }
+        
+        # Получаем текущий список воспитателей в группе
+        current_teachers_in_group = self.db.get_teachers_by_group(group_id)
+        current_teacher_ids = {t['teacher_id'] for t in current_teachers_in_group}
+
+        # Воспитатели, которых нужно добавить
+        to_add = selected_teacher_ids - current_teacher_ids
+        for teacher_id in to_add:
+            self.db.add_group_teacher_relation(group_id, teacher_id)
+
+        # Воспитатели, которых нужно убрать
+        to_remove = current_teacher_ids - selected_teacher_ids
+        for teacher_id in to_remove:
+            self.db.remove_group_teacher_relation(group_id, teacher_id)
 
     def load_teachers(self):
         """Загрузка списка воспитателей для выпадающего списка"""

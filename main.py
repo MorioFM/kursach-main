@@ -125,33 +125,58 @@ def main(page: ft.Page):
 
 def init_main_app(page, header_container, theme_switch):
     """Инициализация основного приложения"""
-    # Инициализация базы данных
-    db = KindergartenDB(DATABASE_NAME)
-    db.connect()
-    db.create_tables()
-    
-    # Проверяем роль пользователя
-    user_role = page.client_storage.get("user_role")
-    user_id = page.client_storage.get("user_id")
-    is_admin = user_role == "admin"
-    
-    # Получаем права доступа пользователя
-    user_permissions = db.get_user_permissions(user_id) if user_id and not is_admin else {}
+    try:
+        # Инициализация базы данных
+        db = KindergartenDB(DATABASE_NAME)
+        db.connect()
+        db.create_tables()
+        
+        # Проверяем роль пользователя
+        user_role = page.client_storage.get("user_role")
+        user_id = page.client_storage.get("user_id")
+        is_admin = user_role == "admin"
+        
+        # Получаем группу пользователя
+        user_group = db.get_user_group(user_id) if user_id and not is_admin else None
+        user_group_id = user_group['group_id'] if user_group else None
+        
+        print(f"DEBUG: user_id={user_id}, is_admin={is_admin}, user_group_id={user_group_id}")
+        
+        # Получаем права доступа пользователя
+        user_permissions = db.get_user_permissions(user_id) if user_id and not is_admin else {}
+    except Exception as ex:
+        print(f"ERROR in init_main_app: {ex}")
+        import traceback
+        traceback.print_exc()
+        page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка инициализации: {str(ex)}"), bgcolor=ft.Colors.ERROR)
+        page.snack_bar.open = True
+        page.update()
+        return
     
     # Контейнер для текущего представления
     content_container = ft.Container(expand=True, key="content_container")
     
     # Создаем представления
-    home_view = HomeView(db, lambda: refresh_current_view(), page)
-    children_view = ChildrenView(db, lambda: refresh_current_view(), page)
-    groups_view = GroupsView(db, lambda: refresh_current_view(), page)
-    teachers_view = TeachersView(db, lambda: refresh_current_view())
-    parents_view = ParentsView(db, lambda: refresh_current_view(), page)
-    attendance_view = AttendanceView(db, lambda: refresh_current_view(), page)
-    events_view = EventsView(db, lambda: refresh_current_view(), page)
-    settings_view = SettingsView(page, theme_switch, db)
-    users_view = UsersView(db, lambda: refresh_current_view(), page) if is_admin else None
-    logs_view = LogsView(page) if is_admin else None
+    try:
+        home_view = HomeView(db, lambda: refresh_current_view(), page, user_group_id)
+        children_view = ChildrenView(db, lambda: refresh_current_view(), page, user_group_id)
+        groups_view = GroupsView(db, lambda: refresh_current_view(), page, user_group_id)
+        teachers_view = TeachersView(db, lambda: refresh_current_view(), page, user_group_id)
+        parents_view = ParentsView(db, lambda: refresh_current_view(), page, user_group_id)
+        attendance_view = AttendanceView(db, lambda: refresh_current_view(), page, user_group_id)
+        events_view = EventsView(db, lambda: refresh_current_view(), page, user_group_id)
+        settings_view = SettingsView(page, theme_switch, db)
+        users_view = UsersView(db, lambda: refresh_current_view(), page) if is_admin else None
+        logs_view = LogsView(page) if is_admin else None
+        print("DEBUG: All views created successfully")
+    except Exception as ex:
+        print(f"ERROR creating views: {ex}")
+        import traceback
+        traceback.print_exc()
+        page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка создания представлений: {str(ex)}"), bgcolor=ft.Colors.ERROR)
+        page.snack_bar.open = True
+        page.update()
+        return
     
     # Создаем electronic_journal_view после добавления страницы
     electronic_journal_view = None

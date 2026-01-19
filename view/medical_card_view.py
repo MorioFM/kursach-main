@@ -9,13 +9,14 @@ from pages_styles.styles import AppStyles
 class MedicalCardView(ft.Container):
     """Представление медицинской карты ребёнка"""
     
-    def __init__(self, db, child_id: int, child_name: str, on_close: Callable = None, page=None):
+    def __init__(self, db, child_id: int, child_name: str, on_close: Callable = None, page=None, embedded=False):
         super().__init__()
         self.db = db
         self.child_id = child_id
         self.child_name = child_name
         self.on_close = on_close
         self.page = page
+        self.embedded = embedded
         
         # Поля формы
         self.blood_type_dropdown = ft.Dropdown(
@@ -142,11 +143,20 @@ class MedicalCardView(ft.Container):
         )
         
         # Основной контент
-        self.content = ft.Column([
-            tabs,
-            ft.Divider(),
-            ft.Row([self.save_button, self.close_button], spacing=10)
-        ], spacing=10)
+        if embedded:
+            # Встроенный режим без кнопки закрыть
+            self.content = ft.Column([
+                tabs,
+                ft.Divider(),
+                ft.Row([self.save_button], spacing=10)
+            ], spacing=10)
+        else:
+            # Обычный режим с кнопкой закрыть
+            self.content = ft.Column([
+                tabs,
+                ft.Divider(),
+                ft.Row([self.save_button, self.close_button], spacing=10)
+            ], spacing=10)
         
         self.padding = 20
         self.expand = True

@@ -13,7 +13,7 @@ from settings.logger import app_logger
 class ParentsView(ft.Container):
     """Представление для управления родителями"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh
@@ -22,6 +22,7 @@ class ParentsView(ft.Container):
         self.search_query = ""
         self.current_page = 0
         self.items_per_page = 8
+        self.user_group_id = user_group_id
         
         # Поля формы
         self.last_name_field = AppStyles.text_field("Фамилия", required=True, autofocus=True)
@@ -152,6 +153,20 @@ class ParentsView(ft.Container):
         else:
             parents = self.db.get_all_parents()
         
+        # Фильтруем родителей по детям из группы
+        if self.user_group_id:
+            children_in_group = self.db.get_children_by_group(self.user_group_id)
+            child_ids = {c['child_id'] for c in children_in_group}
+            filtered_parents = []
+            for parent in parents:
+                parent_children = self.db.get_children_by_parent(parent['parent_id'])
+                # Показываем родителя, если:
+                # 1. У него есть ребенок в группе пользователя
+                # 2. У него нет детей вообще (новый родитель)
+                if not parent_children or any(c['child_id'] in child_ids for c in parent_children):
+                    filtered_parents.append(parent)
+            parents = filtered_parents
+        
         self.all_parents = parents
         self.update_pagination()
         if self.page:
@@ -196,18 +211,23 @@ class ParentsView(ft.Container):
     
     def _create_parent_item(self, parent):
         """Создать элемент списка для родителя"""
+        is_admin = self.page.client_storage.get("user_role") == "admin" if self.page else True
+        
+        if is_admin:
+            trailing = ft.IconButton(
+                icon=ft.Icons.DELETE,
+                tooltip="Удалить",
+                on_click=lambda _, pid=parent['parent_id']: self.delete_parent(str(pid))
+            )
+        else:
+            trailing = None
+        
         return ft.ListTile(
             leading=ft.Icon(ft.Icons.PERSON),
             title=ft.Text(parent.get('full_name', '')),
             subtitle=ft.Text(f"Тел: {parent.get('phone', 'Не указан')} | Email: {parent.get('email', 'Не указан')}"),
-            trailing=ft.PopupMenuButton(
-                icon=ft.Icons.MORE_VERT,
-                tooltip="",
-                items=[
-                    ft.PopupMenuItem(text="Редактировать", icon=ft.Icons.EDIT, on_click=lambda _, pid=parent['parent_id']: self.edit_parent(str(pid))),
-                    ft.PopupMenuItem(text="Удалить", icon=ft.Icons.DELETE, on_click=lambda _, pid=parent['parent_id']: self.delete_parent(str(pid)))
-                ]
-            )
+            on_click=lambda _, pid=parent['parent_id']: self.show_parent_detail(pid),
+            trailing=trailing
         )
     
     def show_add_form(self, e):
@@ -434,6 +454,40 @@ class ParentsView(ft.Container):
         self.email_field.value = ""
         self.address_field.value = ""
         self.clear_field_errors()
+    
+    def show_parent_detail(self, parent_id: int):
+        """Показать детальную информацию о родителе"""
+        from view.parent_detail_view import ParentDetailView
+        
+        def close_detail():
+            self.page.close(dialog)
+        
+        def refresh_data():
+            self.load_parents(self.search_query)
+            if self.on_refresh:
+                self.on_refresh()
+        
+        detail_view = ParentDetailView(
+            db=self.db,
+            parent_id=parent_id,
+            on_close=close_detail,
+            page=self.page,
+            on_refresh=refresh_data
+        )
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            content=ft.Container(
+                content=detail_view,
+                width=900,
+                height=700
+            ),
+            actions=[],
+            open=True
+        )
+        
+        self.page.overlay.append(dialog)
+        self.page.update()
     
     def show_error(self, message: str):
         """Показать ошибку"""

@@ -10,7 +10,7 @@ from settings.config import PRIMARY_COLOR
 class AttendanceView(ft.Container):
     """Представление для управления журналом посещаемости"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh

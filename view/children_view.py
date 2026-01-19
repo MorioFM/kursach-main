@@ -16,7 +16,7 @@ from settings.logger import app_logger
 class ChildrenView(ft.Container):
     """Представление для управления детьми"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh
@@ -25,6 +25,7 @@ class ChildrenView(ft.Container):
         self.page = page
         self.current_page = 0
         self.items_per_page = 8
+        self.user_group_id = user_group_id  # Группа пользователя для фильтрации
         
         # Поля формы
         self.last_name_field = AppStyles.text_field("Фамилия", required=True, autofocus=True)
@@ -121,6 +122,9 @@ class ChildrenView(ft.Container):
     def load_children(self, search_query: str = ""):
         """Загрузка списка детей"""
         children = self.db.search_children(search_query) if search_query else self.db.get_all_children()
+        # Фильтруем по группе пользователя
+        if self.user_group_id:
+            children = [c for c in children if c.get('group_id') == self.user_group_id]
         self.all_children = children
         self.update_pagination()
     
@@ -174,14 +178,11 @@ class ChildrenView(ft.Container):
         return ft.ListTile(
             title=ft.Text(f"{child['last_name']} {child['first_name']} {child['middle_name'] or ''}", weight=ft.FontWeight.BOLD),
             subtitle=ft.Text(f"ДР: {format_date(child['birth_date'])} | {age} лет | {GENDERS.get(child['gender'], child['gender'])} | {child.get('group_name') if child.get('group_id') else 'Без группы'}"),
-            trailing=ft.PopupMenuButton(
-                tooltip="",
-                items=[
-                    ft.PopupMenuItem(text="Медкарта", icon=ft.Icons.MEDICAL_INFORMATION, on_click=lambda _, cid=child['child_id']: self.show_medical_card(str(cid))),
-                    ft.PopupMenuItem(text="Родители", icon=ft.Icons.FAMILY_RESTROOM, on_click=lambda _, cid=child['child_id']: self.manage_parents(str(cid))),
-                    ft.PopupMenuItem(text="Редактировать", icon=ft.Icons.EDIT, on_click=lambda _, cid=child['child_id']: self.edit_child(str(cid))),
-                    ft.PopupMenuItem(text="Удалить", icon=ft.Icons.DELETE, on_click=lambda _, cid=child['child_id']: self.delete_child(str(cid)))
-                ]
+            on_click=lambda _, cid=child['child_id']: self.show_child_detail(cid),
+            trailing=ft.IconButton(
+                icon=ft.Icons.DELETE,
+                tooltip="Удалить",
+                on_click=lambda _, cid=child['child_id']: self.delete_child(str(cid))
             )
         )
     
@@ -445,6 +446,40 @@ class ChildrenView(ft.Container):
                 content=medical_card,
                 width=800,
                 height=600
+            ),
+            actions=[],
+            open=True
+        )
+        
+        self.page.overlay.append(dialog)
+        self.page.update()
+    
+    def show_child_detail(self, child_id: int):
+        """Показать детальную информацию о ребенке"""
+        from view.child_detail_view import ChildDetailView
+        
+        def close_detail():
+            self.page.close(dialog)
+        
+        def refresh_data():
+            self.load_children(self.search_query)
+            if self.on_refresh:
+                self.on_refresh()
+        
+        detail_view = ChildDetailView(
+            db=self.db,
+            child_id=child_id,
+            on_close=close_detail,
+            page=self.page,
+            on_refresh=refresh_data
+        )
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            content=ft.Container(
+                content=detail_view,
+                width=900,
+                height=700
             ),
             actions=[],
             open=True

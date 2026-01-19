@@ -11,11 +11,12 @@ from settings.config import PRIMARY_COLOR
 class HomeView(ft.Container):
     """Домашняя страница приложения"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh
         self.page = page
+        self.user_group_id = user_group_id
         
         # Приветствие
         welcome_section = ft.Container(

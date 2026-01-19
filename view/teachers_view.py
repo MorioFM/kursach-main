@@ -13,15 +13,16 @@ from settings.logger import app_logger
 class TeachersView(ft.Container):
     """Представление для управления воспитателями"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh
-        self.selected_teacher = None
         self.page = page
+        self.selected_teacher = None
         self.search_query = ""
         self.current_page = 0
         self.items_per_page = 8
+        self.is_admin = page.client_storage.get("user_role") == "admin" if page else True
         
         # Поля формы
         self.last_name_field = AppStyles.text_field("Фамилия", required=True, autofocus=True)
@@ -171,16 +172,20 @@ class TeachersView(ft.Container):
         phone_text = teacher.get('phone') if teacher.get('phone') else "Не указан"
         email_text = teacher.get('email') if teacher.get('email') else "Не указан"
         
+        if self.is_admin:
+            trailing = ft.IconButton(
+                icon=ft.Icons.DELETE,
+                tooltip="Удалить",
+                on_click=lambda _, tid=teacher['teacher_id']: self.delete_teacher(str(tid))
+            )
+        else:
+            trailing = None
+        
         return ft.ListTile(
             title=ft.Text(teacher.get('full_name', ''), weight=ft.FontWeight.BOLD),
             subtitle=ft.Text(f"Тел: {phone_text} | Email: {email_text}"),
-            trailing=ft.PopupMenuButton(
-                tooltip="",
-                items=[
-                    ft.PopupMenuItem(text="Редактировать", icon=ft.Icons.EDIT, on_click=lambda _, tid=teacher['teacher_id']: self.edit_teacher(str(tid))),
-                    ft.PopupMenuItem(text="Удалить", icon=ft.Icons.DELETE, on_click=lambda _, tid=teacher['teacher_id']: self.delete_teacher(str(tid)))
-                ]
-            )
+            on_click=lambda _, tid=teacher['teacher_id']: self.show_teacher_detail(tid),
+            trailing=trailing
         )
     
     def show_add_form(self, e):
@@ -447,6 +452,40 @@ class TeachersView(ft.Container):
         self.education_field.value = ""
         self.experience_field.value = ""
         self.clear_field_errors()
+    
+    def show_teacher_detail(self, teacher_id: int):
+        """Показать детальную информацию о воспитателе"""
+        from view.teacher_detail_view import TeacherDetailView
+        
+        def close_detail():
+            self.page.close(dialog)
+        
+        def refresh_data():
+            self.load_teachers(self.search_query)
+            if self.on_refresh:
+                self.on_refresh()
+        
+        detail_view = TeacherDetailView(
+            db=self.db,
+            teacher_id=teacher_id,
+            on_close=close_detail,
+            page=self.page,
+            on_refresh=refresh_data
+        )
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            content=ft.Container(
+                content=detail_view,
+                width=900,
+                height=700
+            ),
+            actions=[],
+            open=True
+        )
+        
+        self.page.overlay.append(dialog)
+        self.page.update()
     
     def show_error(self, message: str):
         """Показать ошибку"""

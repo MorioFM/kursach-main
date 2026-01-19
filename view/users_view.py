@@ -40,6 +40,13 @@ class UsersView(ft.Container):
             value="user"
         )
         
+        self.group_dropdown = ft.Dropdown(
+            label="Группа (для воспитателя)",
+            width=300,
+            options=[ft.DropdownOption("0", "Не назначена")],
+            value="0"
+        )
+        
         # Чекбоксы прав доступа
         self.permissions_checkboxes = {}
         pages = {
@@ -81,6 +88,7 @@ class UsersView(ft.Container):
                 self.password_field,
                 self.password_error,
                 self.role_dropdown,
+                self.group_dropdown,
                 self.permissions_container,
                 ft.Row([
                     self.save_button,
@@ -108,15 +116,24 @@ class UsersView(ft.Container):
     
     def load_users(self):
         """Загрузка списка пользователей"""
-        from database import User
-        users = User.select()
+        users = self.db.get_all_users()
         self.users_list.controls = [self._create_user_item(user) for user in users]
         if self.page:
             self.page.update()
     
+    def load_groups(self):
+        """Загрузка списка групп"""
+        groups = self.db.get_all_groups()
+        self.group_dropdown.options = [ft.DropdownOption("0", "Не назначена")]
+        for g in groups:
+            self.group_dropdown.options.append(
+                ft.DropdownOption(str(g['group_id']), g['group_name'])
+            )
+    
     def _create_user_item(self, user):
         """Создать элемент списка для пользователя"""
-        role_text = "Администратор" if user.role == "admin" else "Пользователь"
+        role_text = "Администратор" if user['role'] == "admin" else "Пользователь"
+        group_text = f" | Группа: {user['group_name']}" if user.get('group_name') else ""
         
         current_username = self.page.client_storage.get("username") if self.page else None
         
@@ -124,19 +141,19 @@ class UsersView(ft.Container):
             ft.PopupMenuItem(text="Редактировать", icon=ft.Icons.EDIT, 
                            on_click=lambda _, u=user: self.edit_user(u)),
             ft.PopupMenuItem(text="Изменить пароль", icon=ft.Icons.LOCK_RESET, 
-                           on_click=lambda _, uid=user.user_id: self.change_password(uid))
+                           on_click=lambda _, uid=user['user_id']: self.change_password(uid))
         ]
         
-        if user.username != current_username:
+        if user['username'] != current_username:
             items.append(
                 ft.PopupMenuItem(text="Удалить", icon=ft.Icons.DELETE, 
-                               on_click=lambda _, uid=user.user_id: self.delete_user(uid))
+                               on_click=lambda _, uid=user['user_id']: self.delete_user(uid))
             )
         
         return ft.ListTile(
             leading=ft.Icon(ft.Icons.PERSON),
-            title=ft.Text(user.username, weight=ft.FontWeight.BOLD),
-            subtitle=ft.Text(f"Роль: {role_text}"),
+            title=ft.Text(user['username'], weight=ft.FontWeight.BOLD),
+            subtitle=ft.Text(f"Роль: {role_text}{group_text}"),
             trailing=ft.PopupMenuButton(
                 icon=ft.Icons.MORE_VERT,
                 tooltip="",
@@ -148,6 +165,7 @@ class UsersView(ft.Container):
         """Показать форму добавления"""
         self.selected_user = None
         self.clear_form()
+        self.load_groups()
         self.form_container.content.controls[0].value = "Добавить пользователя"
         self.password_field.disabled = False
         self.password_field.label = "Пароль"
@@ -160,18 +178,20 @@ class UsersView(ft.Container):
     def edit_user(self, user):
         """Редактировать пользователя"""
         self.selected_user = user
-        self.username_field.value = user.username
+        self.load_groups()
+        self.username_field.value = user['username']
         self.password_field.value = ""
         self.password_field.disabled = True
         self.password_field.label = "Пароль (используйте 'Изменить пароль' для смены)"
-        self.role_dropdown.value = user.role
+        self.role_dropdown.value = user['role']
+        self.group_dropdown.value = str(user['group_id']) if user.get('group_id') else "0"
         
         # Загружаем права доступа
-        user_perms = self.db.get_user_permissions(user.user_id)
+        user_perms = self.db.get_user_permissions(user['user_id'])
         for page_key, cb in self.permissions_checkboxes.items():
             cb.value = user_perms.get(page_key, True)
         
-        self.form_container.content.controls[0].value = f"Редактировать пользователя: {user.username}"
+        self.form_container.content.controls[0].value = f"Редактировать пользователя: {user['username']}"
         self.form_container.visible = True
         if self.page:
             self.page.update()
@@ -281,12 +301,15 @@ class UsersView(ft.Container):
             
             username = self.username_field.value.strip()
             role = self.role_dropdown.value
+            group_id = int(self.group_dropdown.value) if self.group_dropdown.value != "0" else None
             current_username = self.page.client_storage.get("username") if self.page else None
+            
+            print(f"DEBUG: Saving user - username={username}, role={role}, group_id={group_id}")
             
             # Проверяем, существует ли пользователь с таким логином
             try:
                 existing_user = User.get(User.username == username)
-                if not self.selected_user or existing_user.user_id != self.selected_user.user_id:
+                if not self.selected_user or existing_user.user_id != self.selected_user['user_id']:
                     self.show_error(f"Пользователь с логином '{username}' уже существует")
                     return
             except:
@@ -294,16 +317,20 @@ class UsersView(ft.Container):
             
             if self.selected_user:
                 # Обновление
-                self.selected_user.username = username
-                self.selected_user.role = role
-                self.selected_user.save()
-                user_id = self.selected_user.user_id
+                print(f"DEBUG: Updating user {self.selected_user['user_id']}")
+                user = User.get_by_id(self.selected_user['user_id'])
+                user.username = username
+                user.role = role
+                user.group = group_id
+                user.save()
+                user_id = user.user_id
                 app_logger.log('UPDATE', current_username, 'User', f"Updated user: {username}")
                 self.show_success("Пользователь успешно обновлен")
             else:
                 # Создание
+                print(f"DEBUG: Creating new user")
                 password_hash = hashlib.sha256(self.password_field.value.encode()).hexdigest()
-                user = User.create(username=username, password=password_hash, role=role)
+                user = User.create(username=username, password=password_hash, role=role, group=group_id)
                 user_id = user.user_id
                 app_logger.log('CREATE', current_username, 'User', f"Created user: {username} with role: {role}")
                 self.show_success("Пользователь успешно создан")
@@ -320,6 +347,9 @@ class UsersView(ft.Container):
                 self.page.update()
             
         except Exception as ex:
+            print(f"DEBUG: Error saving user: {ex}")
+            import traceback
+            traceback.print_exc()
             self.show_error(f"Ошибка при сохранении: {str(ex)}")
     
     def cancel_edit(self, e):
@@ -336,6 +366,7 @@ class UsersView(ft.Container):
         self.password_field.disabled = False
         self.password_field.label = "Пароль"
         self.role_dropdown.value = "user"
+        self.group_dropdown.value = "0"
         for cb in self.permissions_checkboxes.values():
             cb.value = True
         self.clear_field_errors()

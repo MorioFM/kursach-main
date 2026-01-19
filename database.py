@@ -88,6 +88,17 @@ class ParentChild(BaseModel):
         primary_key = CompositeKey('parent', 'child')
 
 
+class GroupTeacher(BaseModel):
+    """Модель связи группы и воспитателя"""
+    group = ForeignKeyField(Group, backref='group_teachers', column_name='group_id')
+    teacher = ForeignKeyField(Teacher, backref='teacher_groups', column_name='teacher_id')
+    created_at = DateTimeField(default=datetime.now)
+    
+    class Meta:
+        table_name = 'group_teacher'
+        primary_key = CompositeKey('group', 'teacher')
+
+
 class AttendanceRecord(BaseModel):
     """Модель записи в журнале посещаемости"""
     record_id = AutoField(primary_key=True)
@@ -131,6 +142,7 @@ class User(BaseModel):
     username = CharField(unique=True, null=False)
     password = CharField(null=False)  # Хеш пароля
     role = CharField(default='admin')  # Роль пользователя
+    group = ForeignKeyField(Group, backref='users', null=True, column_name='group_id')  # Группа для воспитателя
     created_at = DateTimeField(default=datetime.now)
     
     class Meta:
@@ -187,14 +199,21 @@ class KindergartenDB:
     
     def create_tables(self):
         """Создать таблицы в базе данных"""
-        db.create_tables([Teacher, Group, Parent, Child, ParentChild, AttendanceRecord, MedicalRecord, User, UserPermission])
+        db.create_tables([Teacher, Group, Parent, Child, ParentChild, GroupTeacher, AttendanceRecord, MedicalRecord, User, UserPermission])
+        
+        # Миграция: добавляем колонку group_id если её нет
+        try:
+            db.execute_sql('ALTER TABLE users ADD COLUMN group_id INTEGER REFERENCES groups(group_id)')
+        except:
+            pass  # Колонка уже существует
+        
         # Создаем администратора по умолчанию
         try:
             User.get(User.username == 'admin')
         except:
             import hashlib
             password_hash = hashlib.sha256('admin'.encode()).hexdigest()
-            User.create(username='admin', password=password_hash, role='admin')
+            User.create(username='admin', password=password_hash, role='admin', group=None)
         print("Tables created successfully")
     
     def __getattr__(self, name):
@@ -284,8 +303,59 @@ class KindergartenDB:
     
     def get_all_users(self):
         """Получить всех пользователей"""
-        users = User.select()
-        return [{'user_id': u.user_id, 'username': u.username, 'role': u.role} for u in users]
+        users = User.select(User, Group).join(Group, JOIN.LEFT_OUTER)
+        return [{
+            'user_id': u.user_id, 
+            'username': u.username, 
+            'role': u.role,
+            'group_id': u.group.group_id if u.group else None,
+            'group_name': u.group.group_name if u.group else None
+        } for u in users]
+    
+    def set_user_group(self, user_id: int, group_id: int = None):
+        """Установить группу для пользователя"""
+        user = User.get_by_id(user_id)
+        user.group = group_id
+        user.save()
+    
+    def get_user_group(self, user_id: int):
+        """Получить группу пользователя"""
+        try:
+            user = User.select(User, Group).join(Group, JOIN.LEFT_OUTER).where(User.user_id == user_id).get()
+            if user.group:
+                return {'group_id': user.group.group_id, 'group_name': user.group.group_name}
+            return None
+        except:
+            return None
+    
+    def add_group_teacher_relation(self, group_id: int, teacher_id: int):
+        """Добавить связь группа-воспитатель"""
+        try:
+            GroupTeacher.create(group=group_id, teacher=teacher_id)
+        except:
+            pass  # Связь уже существует
+    
+    def remove_group_teacher_relation(self, group_id: int, teacher_id: int):
+        """Удалить связь группа-воспитатель"""
+        GroupTeacher.delete().where((GroupTeacher.group == group_id) & (GroupTeacher.teacher == teacher_id)).execute()
+    
+    def get_teachers_by_group(self, group_id: int):
+        """Получить воспитателей группы"""
+        relations = GroupTeacher.select(GroupTeacher, Teacher).join(Teacher).where(GroupTeacher.group == group_id)
+        result = []
+        for relation in relations:
+            teacher_data = self._teachers_settings._teacher_to_dict(relation.teacher)
+            result.append(teacher_data)
+        return result
+    
+    def get_groups_by_teacher(self, teacher_id: int):
+        """Получить группы воспитателя"""
+        relations = GroupTeacher.select(GroupTeacher, Group).join(Group).where(GroupTeacher.teacher == teacher_id)
+        result = []
+        for relation in relations:
+            group_data = self._groups_settings._group_to_dict(relation.group)
+            result.append(group_data)
+        return result
     
 
     

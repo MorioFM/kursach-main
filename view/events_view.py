@@ -13,7 +13,7 @@ from settings.logger import app_logger
 class EventsView(ft.Container):
     """Представление для управления мероприятиями"""
     
-    def __init__(self, db, on_refresh: Callable = None, page=None):
+    def __init__(self, db, on_refresh: Callable = None, page=None, user_group_id=None):
         super().__init__()
         self.db = db
         self.on_refresh = on_refresh
@@ -170,19 +170,23 @@ class EventsView(ft.Container):
     def _create_event_item(self, event):
         """Создать элемент списка для мероприятия"""
         eid = event.get('event_id')
+        is_admin = self.page.client_storage.get("user_role") == "admin" if self.page else True
+        
+        if is_admin:
+            trailing = ft.IconButton(
+                icon=ft.Icons.DELETE,
+                tooltip="Удалить",
+                on_click=lambda _, e=eid: self.delete_event(str(e))
+            )
+        else:
+            trailing = None
+        
         return ft.ListTile(
             leading=ft.Icon(ft.Icons.EVENT),
             title=ft.Text(event.get('name', '')),
             subtitle=ft.Text(f"Дата: {event.get('date', '')} | Ответственный: {event.get('teacher_name', 'Не назначен')} | Групп: {len(event.get('groups', []))}"),
-            trailing=ft.PopupMenuButton(
-                icon=ft.Icons.MORE_VERT,
-                tooltip="",
-                items=[
-                    ft.PopupMenuItem(text="Участники", icon=ft.Icons.GROUPS, on_click=lambda _, e=eid: self.view_participants(str(e))),
-                    ft.PopupMenuItem(text="Редактировать", icon=ft.Icons.EDIT, on_click=lambda _, e=eid: self.edit_event(str(e))),
-                    ft.PopupMenuItem(text="Удалить", icon=ft.Icons.DELETE, on_click=lambda _, e=eid: self.delete_event(str(e)))
-                ]
-            )
+            on_click=lambda _, ev=event: self.show_event_detail(ev),
+            trailing=trailing
         )
     
     def show_add_form(self, e):
@@ -255,6 +259,40 @@ class EventsView(ft.Container):
             on_yes=on_yes,
             adaptive=True
         )
+    
+    def show_event_detail(self, event):
+        """Показать детальную информацию о мероприятии"""
+        from view.event_detail_view import EventDetailView
+        
+        def close_detail():
+            self.page.close(dialog)
+        
+        def refresh_data():
+            self.load_events()
+            if self.on_refresh:
+                self.on_refresh()
+        
+        detail_view = EventDetailView(
+            db=self.db,
+            event=event,
+            on_close=close_detail,
+            page=self.page,
+            on_refresh=refresh_data
+        )
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            content=ft.Container(
+                content=detail_view,
+                width=900,
+                height=700
+            ),
+            actions=[],
+            open=True
+        )
+        
+        self.page.overlay.append(dialog)
+        self.page.update()
     
     def view_participants(self, event_id: str):
         """Просмотр участников мероприятия"""
