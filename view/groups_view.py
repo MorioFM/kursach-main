@@ -197,12 +197,11 @@ class GroupsView(ft.Container):
         return ft.ListTile(
             title=ft.Text(group['group_name'], weight=ft.FontWeight.BOLD),
             subtitle=ft.Text(f"{AGE_CATEGORIES.get(group['age_category'], group['age_category'])} | {teacher_names} | Детей: {children_count}"),
-            trailing=ft.PopupMenuButton(
-                tooltip="",
-                items=[
-                    ft.PopupMenuItem(text="Редактировать", icon=ft.Icons.EDIT, on_click=lambda _, gid=group['group_id']: self.edit_group(str(gid))),
-                    ft.PopupMenuItem(text="Удалить", icon=ft.Icons.DELETE, on_click=lambda _, gid=group['group_id']: self.delete_group(str(gid)))
-                ]
+            on_click=lambda _, gid=group['group_id']: self.view_group_details(gid),
+            trailing=ft.IconButton(
+                icon=ft.Icons.DELETE,
+                tooltip="Удалить",
+                on_click=lambda e, gid=group['group_id']: self.delete_group(str(gid))
             )
         )
     
@@ -590,6 +589,35 @@ class GroupsView(ft.Container):
         if self.page:
             self.page.update()
 
+    def view_group_details(self, group_id: int):
+        """Открыть детальное представление группы"""
+        from view.group_detail_view import GroupDetailView
+        
+        def close_detail():
+            self.page.close(dialog)
+            self.load_groups()
+            if self.on_refresh:
+                self.on_refresh()
+        
+        detail_view = GroupDetailView(
+            db=self.db,
+            group_id=group_id,
+            on_close=close_detail,
+            page=self.page,
+            on_refresh=self.on_refresh
+        )
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            content=ft.Container(content=detail_view, width=900),
+            actions=[],
+            content_padding=0
+        )
+        
+        self.page.overlay.append(dialog)
+        dialog.open = True
+        self.page.update()
+    
     def refresh(self):
         """Обновить данные"""
         self.load_groups()

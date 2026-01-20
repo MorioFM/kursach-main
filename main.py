@@ -156,6 +156,9 @@ def init_main_app(page, header_container, theme_switch):
     # Контейнер для текущего представления
     content_container = ft.Container(expand=True, key="content_container")
     
+    # Добавляем ссылку на контейнер в page для доступа из представлений
+    page.content_area = content_container
+    
     # Создаем представления
     try:
         home_view = HomeView(db, lambda: refresh_current_view(), page, user_group_id)

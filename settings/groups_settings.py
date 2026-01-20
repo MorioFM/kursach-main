@@ -36,7 +36,11 @@ class GroupsSettings:
     def get_group_by_id(self, group_id: int) -> Optional[dict]:
         """Получить информацию о группе по ID"""
         try:
-            group = Group.get_by_id(group_id)
+            group = (Group
+                    .select(Group, Teacher)
+                    .join(Teacher, JOIN.LEFT_OUTER)
+                    .where(Group.group_id == group_id)
+                    .get())
             return self._group_to_dict(group)
         except DoesNotExist:
             return None
