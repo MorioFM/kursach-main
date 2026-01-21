@@ -20,6 +20,7 @@ class ElectronicJournalView(ft.Container):
         self.current_month = datetime.now().month
         self.current_year = datetime.now().year
         self.selected_group = None
+        self.attendance_cache = {}  # Кэш для данных посещаемости
         
         # Элементы управления
         self.group_dropdown = ft.Dropdown(
@@ -131,8 +132,22 @@ class ElectronicJournalView(ft.Container):
             # Получаем количество дней в месяце
             days_in_month = self.get_days_in_month()
             
+            # Предзагружаем все данные посещаемости за месяц
+            self.attendance_cache = {}
+            for day in range(1, days_in_month + 1):
+                date_str = f"{self.current_year}-{self.current_month:02d}-{day:02d}"
+                attendance_data = self.db.get_attendance_by_group_and_date(self.selected_group, date_str)
+                for item in attendance_data:
+                    self.attendance_cache[f"{item['child_id']}_{date_str}"] = item['status']
+            
             # Создаем заголовок с днями
             header_row = [ft.Container(
+                content=ft.Text("№", weight=ft.FontWeight.BOLD, size=12),
+                width=40,
+                padding=5,
+                border=ft.border.all(1, border_color),
+                bgcolor=header_bg
+            ), ft.Container(
                 content=ft.Text("ФИО", weight=ft.FontWeight.BOLD, size=12),
                 width=200,
                 padding=5,
@@ -153,8 +168,14 @@ class ElectronicJournalView(ft.Container):
             # Создаем строки для каждого ребенка
             rows = [ft.Row(header_row, spacing=0)]
             
-            for child in children:
+            for idx, child in enumerate(children, start=1):
                 child_row = [ft.Container(
+                    content=ft.Text(str(idx), size=11, text_align=ft.TextAlign.CENTER),
+                    width=40,
+                    padding=5,
+                    border=ft.border.all(1, border_color),
+                    bgcolor=row_bg
+                ), ft.Container(
                     content=ft.Text(f"{child['last_name']} {child['first_name']}", size=11),
                     width=200,
                     padding=5,
@@ -165,11 +186,8 @@ class ElectronicJournalView(ft.Container):
                 for day in range(1, days_in_month + 1):
                     date_str = f"{self.current_year}-{self.current_month:02d}-{day:02d}"
                     
-                    # Получаем статус посещаемости
-                    attendance_data = self.db.get_attendance_by_group_and_date(self.selected_group, date_str)
-                    child_attendance = next((item for item in attendance_data if item['child_id'] == child['child_id']), None)
-                    
-                    status = child_attendance['status'] if child_attendance else 'Присутствует'
+                    # Получаем статус из кэша
+                    status = self.attendance_cache.get(f"{child['child_id']}_{date_str}", 'Присутствует')
                     
                     # Определяем цвет и символ
                     if status == 'Присутствует':
@@ -248,11 +266,8 @@ class ElectronicJournalView(ft.Container):
     def toggle_attendance(self, child_id: int, date_str: str):
         """Переключение статуса посещаемости"""
         try:
-            # Получаем текущий статус
-            attendance_data = self.db.get_attendance_by_group_and_date(self.selected_group, date_str)
-            child_attendance = next((item for item in attendance_data if item['child_id'] == child_id), None)
-            
-            current_status = child_attendance['status'] if child_attendance else 'Присутствует'
+            # Получаем текущий статус из кэша
+            current_status = self.attendance_cache.get(f"{child_id}_{date_str}", 'Присутствует')
             
             # Циклическое переключение статусов
             if current_status == 'Присутствует':
@@ -264,6 +279,9 @@ class ElectronicJournalView(ft.Container):
             
             # Обновляем в базе данных
             self.db.update_attendance_record(child_id, date_str, new_status)
+            
+            # Обновляем кэш
+            self.attendance_cache[f"{child_id}_{date_str}"] = new_status
             
             # Перестраиваем журнал
             self.build_journal()

@@ -16,6 +16,8 @@ class GroupDetailView(ft.Container):
         self.on_close = on_close
         self.page = page
         self.on_refresh = on_refresh
+        self.children_page = 0
+        self.children_per_page = 5
         
         self.group = self.db.get_group_by_id(group_id)
         if not self.group:
@@ -62,10 +64,14 @@ class GroupDetailView(ft.Container):
     def _create_children_tab(self):
         """Создать вкладку с детьми"""
         self.children_column = ft.Column([], spacing=10, scroll=ft.ScrollMode.AUTO)
+        self.children_pagination = ft.Row([], alignment=ft.MainAxisAlignment.CENTER)
         self._load_children()
         
         return ft.Container(
-            content=self.children_column,
+            content=ft.Column([
+                self.children_column,
+                self.children_pagination
+            ], spacing=10),
             padding=20
         )
     
@@ -85,15 +91,64 @@ class GroupDetailView(ft.Container):
         current_children = self.db.get_children_by_group(self.group_id)
         current_child_ids = [c['child_id'] for c in current_children]
         
+        manage_page = [0]
+        items_per_page = 7
+        
         child_checkboxes = []
         for child in all_children:
+            # Пропускаем детей, которые уже в других группах
+            child_group_id = child.get('group_id')
+            if child_group_id is not None and child_group_id != self.group_id:
+                continue
+            
             is_selected = child['child_id'] in current_child_ids
+            age = self._calculate_age(child.get('birth_date'))
             checkbox = ft.Checkbox(
-                label=f"{child['last_name']} {child['first_name']} {child.get('middle_name', '')}",
+                label=f"{child['last_name']} {child['first_name']} {child.get('middle_name', '')} ({age})",
                 value=is_selected,
                 data=child['child_id']
             )
             child_checkboxes.append(checkbox)
+        
+        checkboxes_column = ft.Column([], scroll=ft.ScrollMode.AUTO, height=250)
+        pagination_row = ft.Row([], alignment=ft.MainAxisAlignment.CENTER, height=50)
+        
+        def update_manage_list():
+            total_pages = (len(child_checkboxes) + items_per_page - 1) // items_per_page
+            start_idx = manage_page[0] * items_per_page
+            end_idx = min(start_idx + items_per_page, len(child_checkboxes))
+            
+            checkboxes_column.controls = child_checkboxes[start_idx:end_idx]
+            
+            if total_pages > 1:
+                pagination_row.controls = [
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_BACK,
+                        disabled=manage_page[0] == 0,
+                        on_click=lambda e: prev_manage_page()
+                    ),
+                    ft.Text(f"{manage_page[0] + 1} / {total_pages}", size=14),
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_FORWARD,
+                        disabled=manage_page[0] >= total_pages - 1,
+                        on_click=lambda e: next_manage_page()
+                    )
+                ]
+            else:
+                pagination_row.controls = []
+        
+        def prev_manage_page():
+            if manage_page[0] > 0:
+                manage_page[0] -= 1
+                update_manage_list()
+                dialog.update()
+        
+        def next_manage_page():
+            total_pages = (len(child_checkboxes) + items_per_page - 1) // items_per_page
+            if manage_page[0] < total_pages - 1:
+                manage_page[0] += 1
+                update_manage_list()
+                dialog.update()
         
         def save_children(e):
             for checkbox in child_checkboxes:
@@ -112,9 +167,12 @@ class GroupDetailView(ft.Container):
             modal=True,
             title=ft.Text(f"Дети группы: {self.group['group_name']}"),
             content=ft.Container(
-                content=ft.Column(child_checkboxes, scroll=ft.ScrollMode.AUTO),
+                content=ft.Column([
+                    ft.Container(content=checkboxes_column, height=250),
+                    ft.Container(content=pagination_row, height=50)
+                ], spacing=10),
                 width=400,
-                height=300
+                height=350
             ),
             actions=[
                 ft.ElevatedButton("Сохранить", on_click=save_children),
@@ -122,6 +180,7 @@ class GroupDetailView(ft.Container):
             ]
         )
         
+        update_manage_list()
         self.page.overlay.append(dialog)
         dialog.open = True
         self.page.update()
@@ -176,9 +235,9 @@ class GroupDetailView(ft.Container):
     
     def _load_children(self):
         """Загрузить список детей"""
-        children = self.db.get_children_by_group(self.group_id)
+        all_children = self.db.get_children_by_group(self.group_id)
         
-        if not children:
+        if not all_children:
             self.children_column.controls = [
                 ft.Container(
                     content=ft.Text("В группе пока нет детей", size=16, color=ft.Colors.GREY),
@@ -186,26 +245,66 @@ class GroupDetailView(ft.Container):
                     padding=20
                 )
             ]
-        else:
-            self.children_column.controls = [
-                ft.Card(
-                    content=ft.Container(
-                        content=ft.Column([
-                            ft.Row([
-                                ft.Icon(ft.Icons.MALE if child['gender'] == 'М' else ft.Icons.FEMALE, 
-                                       color=ft.Colors.BLUE if child['gender'] == 'М' else ft.Colors.PINK, size=40),
-                                ft.Column([
-                                    ft.Text(f"{child['last_name']} {child['first_name']} {child.get('middle_name', '')}", 
-                                           size=16, weight=ft.FontWeight.BOLD),
-                                    ft.Text(f"Возраст: {self._calculate_age(child['birth_date'])}", size=14),
-                                    ft.Text(f"Дата рождения: {self._format_date(child['birth_date'])}", size=14)
-                                ], expand=True)
-                            ])
-                        ], spacing=10),
-                        padding=15
-                    )
-                ) for child in children
+            self.children_pagination.controls = []
+            return
+        
+        total_pages = (len(all_children) + self.children_per_page - 1) // self.children_per_page
+        start_idx = self.children_page * self.children_per_page
+        end_idx = min(start_idx + self.children_per_page, len(all_children))
+        children = all_children[start_idx:end_idx]
+        
+        self.children_column.controls = [
+            ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.MALE if child['gender'] == 'М' else ft.Icons.FEMALE, 
+                                   color=ft.Colors.BLUE if child['gender'] == 'М' else ft.Colors.PINK, size=40),
+                            ft.Column([
+                                ft.Text(f"{child['last_name']} {child['first_name']} {child.get('middle_name', '')}", 
+                                       size=16, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Возраст: {self._calculate_age(child['birth_date'])}", size=14),
+                                ft.Text(f"Дата рождения: {self._format_date(child['birth_date'])}", size=14)
+                            ], expand=True)
+                        ])
+                    ], spacing=10),
+                    padding=15
+                )
+            ) for child in children
+        ]
+        
+        if total_pages > 1:
+            self.children_pagination.controls = [
+                ft.IconButton(
+                    icon=ft.Icons.ARROW_BACK,
+                    disabled=self.children_page == 0,
+                    on_click=lambda e: self._prev_children_page()
+                ),
+                ft.Text(f"{self.children_page + 1} / {total_pages}", size=16),
+                ft.IconButton(
+                    icon=ft.Icons.ARROW_FORWARD,
+                    disabled=self.children_page >= total_pages - 1,
+                    on_click=lambda e: self._next_children_page()
+                )
             ]
+        else:
+            self.children_pagination.controls = []
+    
+    def _prev_children_page(self):
+        """Предыдущая страница детей"""
+        if self.children_page > 0:
+            self.children_page -= 1
+            self._load_children()
+            self.page.update()
+    
+    def _next_children_page(self):
+        """Следующая страница детей"""
+        all_children = self.db.get_children_by_group(self.group_id)
+        total_pages = (len(all_children) + self.children_per_page - 1) // self.children_per_page
+        if self.children_page < total_pages - 1:
+            self.children_page += 1
+            self._load_children()
+            self.page.update()
     
     def _load_teachers(self):
         """Загрузить список воспитателей"""
