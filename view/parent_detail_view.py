@@ -15,6 +15,8 @@ class ParentDetailView(ft.Container):
         self.page = page
         self.on_refresh = on_refresh
         self.is_admin = page.client_storage.get("user_role") == "admin" if page else True
+        self.children_page = 0
+        self.children_per_page = 5
         
         # Получаем данные родителя
         self.parent_data = self.db.get_parent_by_id(parent_id)
@@ -64,7 +66,8 @@ class ParentDetailView(ft.Container):
     
     def _create_children_tab(self):
         """Создать вкладку с детьми"""
-        self.children_column = ft.Column([], spacing=10, scroll=ft.ScrollMode.AUTO)
+        self.children_column = ft.Column([], spacing=10, scroll=ft.ScrollMode.AUTO, height=400)
+        self.children_pagination = ft.Row([], alignment=ft.MainAxisAlignment.CENTER, height=50)
         self._load_children()
         
         return ft.Container(
@@ -75,16 +78,17 @@ class ParentDetailView(ft.Container):
                     ft.ElevatedButton("Настроить", icon=ft.Icons.SETTINGS, on_click=self.manage_children)
                 ]),
                 ft.Divider(),
-                self.children_column
+                ft.Container(content=self.children_column, height=400),
+                ft.Container(content=self.children_pagination, height=50)
             ], spacing=10),
             padding=20
         )
     
     def _load_children(self):
         """Загрузить список детей"""
-        children = self.db.get_children_by_parent(self.parent_id)
+        all_children = self.db.get_children_by_parent(self.parent_id)
         
-        if not children:
+        if not all_children:
             self.children_column.controls = [
                 ft.Container(
                     content=ft.Text("Дети не указаны", size=16, color=ft.Colors.GREY),
@@ -92,32 +96,72 @@ class ParentDetailView(ft.Container):
                     padding=20
                 )
             ]
-        else:
-            self.children_column.controls = []
-            for child in children:
-                child_full_name = f"{child.get('last_name', '')} {child.get('first_name', '')} {child.get('middle_name', '') or ''}".strip()
-                if not child_full_name:
-                    child_full_name = child.get('full_name', 'Неизвестно')
-                
-                self.children_column.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Icon(ft.Icons.CHILD_CARE, size=40),
-                                    ft.Column([
-                                        ft.Text(child_full_name, size=16, weight=ft.FontWeight.BOLD),
-                                        ft.Text(f"Степень родства: {child.get('relationship', 'Не указано')}", size=14)
-                                    ], expand=True)
-                                ]),
-                                ft.Divider(),
-                                ft.Text(f"Группа: {child.get('group_name', 'Без группы')}", size=14),
-                                ft.Text(f"Дата рождения: {child.get('birth_date', 'Не указана')}", size=14)
-                            ], spacing=10),
-                            padding=15
-                        )
+            self.children_pagination.controls = []
+            return
+        
+        total_pages = (len(all_children) + self.children_per_page - 1) // self.children_per_page
+        start_idx = self.children_page * self.children_per_page
+        end_idx = min(start_idx + self.children_per_page, len(all_children))
+        children = all_children[start_idx:end_idx]
+        
+        self.children_column.controls = []
+        for child in children:
+            child_full_name = f"{child.get('last_name', '')} {child.get('first_name', '')} {child.get('middle_name', '') or ''}".strip()
+            if not child_full_name:
+                child_full_name = child.get('full_name', 'Неизвестно')
+            
+            self.children_column.controls.append(
+                ft.Card(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Icon(ft.Icons.CHILD_CARE, size=40),
+                                ft.Column([
+                                    ft.Text(child_full_name, size=16, weight=ft.FontWeight.BOLD),
+                                    ft.Text(f"Степень родства: {child.get('relationship', 'Не указано')}", size=14)
+                                ], expand=True)
+                            ]),
+                            ft.Divider(),
+                            ft.Text(f"Группа: {child.get('group_name', 'Без группы')}", size=14),
+                            ft.Text(f"Дата рождения: {child.get('birth_date', 'Не указана')}", size=14)
+                        ], spacing=10),
+                        padding=15
                     )
                 )
+            )
+        
+        if total_pages > 1:
+            self.children_pagination.controls = [
+                ft.IconButton(
+                    icon=ft.Icons.ARROW_BACK,
+                    disabled=self.children_page == 0,
+                    on_click=lambda e: self._prev_children_page()
+                ),
+                ft.Text(f"{self.children_page + 1} / {total_pages}", size=16),
+                ft.IconButton(
+                    icon=ft.Icons.ARROW_FORWARD,
+                    disabled=self.children_page >= total_pages - 1,
+                    on_click=lambda e: self._next_children_page()
+                )
+            ]
+        else:
+            self.children_pagination.controls = []
+    
+    def _prev_children_page(self):
+        """Предыдущая страница детей"""
+        if self.children_page > 0:
+            self.children_page -= 1
+            self._load_children()
+            self.page.update()
+    
+    def _next_children_page(self):
+        """Следующая страница детей"""
+        all_children = self.db.get_children_by_parent(self.parent_id)
+        total_pages = (len(all_children) + self.children_per_page - 1) // self.children_per_page
+        if self.children_page < total_pages - 1:
+            self.children_page += 1
+            self._load_children()
+            self.page.update()
     
     def manage_children(self, e):
         """Управление детьми родителя"""

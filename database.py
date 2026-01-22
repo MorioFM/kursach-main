@@ -67,6 +67,7 @@ class Child(BaseModel):
     gender = CharField(null=False, constraints=[Check("gender IN ('М', 'Ж')")])
     group = ForeignKeyField(Group, backref='children', null=True, column_name='group_id')
     enrollment_date = DateField(null=False)
+    locker_symbol = CharField(null=True)  # Символ шкафчика
     created_at = DateTimeField(default=datetime.now)
     
     class Meta:
@@ -207,6 +208,12 @@ class KindergartenDB:
         except:
             pass  # Колонка уже существует
         
+        # Миграция: добавляем колонку locker_symbol если её нет
+        try:
+            db.execute_sql('ALTER TABLE children ADD COLUMN locker_symbol TEXT')
+        except:
+            pass  # Колонка уже существует
+        
         # Создаем администратора по умолчанию
         try:
             User.get(User.username == 'admin')
@@ -235,7 +242,8 @@ class KindergartenDB:
         
         # Методы для работы с детьми
         child_methods = ['add_child', 'get_all_children', 'get_child_by_id', 'get_children_by_group', 'search_children', 
-                        'update_child', 'delete_child', 'transfer_child_to_group', 'bulk_transfer_children', 'get_children_without_group']
+                        'update_child', 'delete_child', 'transfer_child_to_group', 'bulk_transfer_children', 'get_children_without_group',
+                        'get_used_locker_symbols_in_group']
         if name in child_methods:
             return getattr(self._children_settings, name)
         

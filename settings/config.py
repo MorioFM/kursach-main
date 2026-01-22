@@ -3,7 +3,18 @@
 """
 
 # Настройки базы данных
-DATABASE_NAME = "kindergarten.db"
+import os
+import sys
+
+# Определяем путь к базе данных (работает и в dev, и после компиляации)
+if getattr(sys, 'frozen', False):
+    # Если приложение скомпилировано
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Если запускается из исходников
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DATABASE_NAME = os.path.join(BASE_DIR, "kindergarten.db")
 
 # Настройки интерфейса
 APP_TITLE = "Учет детей в детском саду"

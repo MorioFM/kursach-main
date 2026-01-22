@@ -148,6 +148,12 @@ class ElectronicJournalView(ft.Container):
                 border=ft.border.all(1, border_color),
                 bgcolor=header_bg
             ), ft.Container(
+                content=ft.Text("🏭", weight=ft.FontWeight.BOLD, size=12),
+                width=40,
+                padding=5,
+                border=ft.border.all(1, border_color),
+                bgcolor=header_bg
+            ), ft.Container(
                 content=ft.Text("ФИО", weight=ft.FontWeight.BOLD, size=12),
                 width=200,
                 padding=5,
@@ -169,8 +175,15 @@ class ElectronicJournalView(ft.Container):
             rows = [ft.Row(header_row, spacing=0)]
             
             for idx, child in enumerate(children, start=1):
+                locker_symbol = child.get('locker_symbol', '❓')
                 child_row = [ft.Container(
                     content=ft.Text(str(idx), size=11, text_align=ft.TextAlign.CENTER),
+                    width=40,
+                    padding=5,
+                    border=ft.border.all(1, border_color),
+                    bgcolor=row_bg
+                ), ft.Container(
+                    content=ft.Text(locker_symbol or '❓', size=16, text_align=ft.TextAlign.CENTER),
                     width=40,
                     padding=5,
                     border=ft.border.all(1, border_color),

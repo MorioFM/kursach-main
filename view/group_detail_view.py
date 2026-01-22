@@ -409,6 +409,11 @@ class GroupDetailView(ft.Container):
                 leading=ft.Icon(ft.Icons.PERSON),
                 title=ft.Text("Управление воспитателями"),
                 on_click=lambda e: [self.page.close(menu_dialog), self.manage_teachers(e)]
+            ),
+            ft.ListTile(
+                leading=ft.Icon(ft.Icons.DOOR_FRONT_DOOR),
+                title=ft.Text("Назначить шкафчики"),
+                on_click=lambda e: [self.page.close(menu_dialog), self.manage_lockers()]
             )
         ]
         
@@ -481,4 +486,109 @@ class GroupDetailView(ft.Container):
             self.on_refresh()
         
         self.page.close(dialog)
+        self.page.update()
+
+    def manage_lockers(self):
+        """Управление шкафчиками детей"""
+        from settings.locker_symbols import LOCKER_SYMBOLS
+        
+        children = self.db.get_children_by_group(self.group_id)
+        if not children:
+            return
+        
+        used_symbols = self.db.get_used_locker_symbols_in_group(self.group_id)
+        
+        locker_page = [0]
+        items_per_page = 7
+        symbol_dropdowns = {}
+        
+        for child in children:
+            current_symbol = child.get('locker_symbol')
+            available = {k: v for k, v in LOCKER_SYMBOLS.items() 
+                        if k not in used_symbols or k == current_symbol}
+            
+            options = [ft.dropdown.Option("", "Не назначен")]
+            options.extend([ft.dropdown.Option(k, f"{k} {v}") for k, v in available.items()])
+            
+            dropdown = ft.Dropdown(
+                label=f"{child['last_name']} {child['first_name']}",
+                value=current_symbol or "",
+                options=options,
+                width=300,
+                data=child['child_id']
+            )
+            symbol_dropdowns[child['child_id']] = dropdown
+        
+        locker_rows = list(symbol_dropdowns.values())
+        lockers_column = ft.Column([], scroll=ft.ScrollMode.AUTO, height=300)
+        pagination_row = ft.Row([], alignment=ft.MainAxisAlignment.CENTER, height=50)
+        
+        def update_locker_list():
+            total_pages = (len(locker_rows) + items_per_page - 1) // items_per_page
+            start_idx = locker_page[0] * items_per_page
+            end_idx = min(start_idx + items_per_page, len(locker_rows))
+            
+            lockers_column.controls = locker_rows[start_idx:end_idx]
+            
+            if total_pages > 1:
+                pagination_row.controls = [
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_BACK,
+                        disabled=locker_page[0] == 0,
+                        on_click=lambda e: prev_locker_page()
+                    ),
+                    ft.Text(f"{locker_page[0] + 1} / {total_pages}", size=14),
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_FORWARD,
+                        disabled=locker_page[0] >= total_pages - 1,
+                        on_click=lambda e: next_locker_page()
+                    )
+                ]
+            else:
+                pagination_row.controls = []
+        
+        def prev_locker_page():
+            if locker_page[0] > 0:
+                locker_page[0] -= 1
+                update_locker_list()
+                dialog.update()
+        
+        def next_locker_page():
+            total_pages = (len(locker_rows) + items_per_page - 1) // items_per_page
+            if locker_page[0] < total_pages - 1:
+                locker_page[0] += 1
+                update_locker_list()
+                dialog.update()
+        
+        def save_lockers(e):
+            for child_id, dropdown in symbol_dropdowns.items():
+                symbol = dropdown.value if dropdown.value else None
+                self.db.update_child(child_id, locker_symbol=symbol)
+            
+            self._load_children()
+            if self.on_refresh:
+                self.on_refresh()
+            self.page.close(dialog)
+            self.page.update()
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"Назначить шкафчики: {self.group['group_name']}"),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Container(content=lockers_column, height=300),
+                    ft.Container(content=pagination_row, height=50)
+                ], spacing=10),
+                width=400,
+                height=400
+            ),
+            actions=[
+                ft.ElevatedButton("Сохранить", on_click=save_lockers),
+                ft.TextButton("Отмена", on_click=lambda e: self.page.close(dialog))
+            ]
+        )
+        
+        update_locker_list()
+        self.page.overlay.append(dialog)
+        dialog.open = True
         self.page.update()

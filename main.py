@@ -23,8 +23,17 @@ from settings.logger import app_logger
 
 def main(page: ft.Page):
     """Главная функция приложения"""
-    icon_path = os.path.abspath("C:/Users/zsa-6/Desktop/kursach-main/src/assets/828770ec-5c95-4431-a4a7-0f3c102c1caf.ico")
-    page.window.icon = icon_path
+    import sys
+    # Определяем путь к иконке
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    icon_path = os.path.join(base_path, "src", "assets", "828770ec-5c95-4431-a4a7-0f3c102c1caf.ico")
+    if os.path.exists(icon_path):
+        page.window.icon = icon_path
+    
     page.title = APP_TITLE
     page.window.width = WINDOW_WIDTH
     page.window.height = WINDOW_HEIGHT

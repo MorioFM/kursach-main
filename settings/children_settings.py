@@ -8,7 +8,7 @@ class ChildrenSettings:
     
     def add_child(self, last_name: str, first_name: str, middle_name: str,
                   birth_date: str, gender: str, group_id: int, 
-                  enrollment_date: str) -> int:
+                  enrollment_date: str, locker_symbol: str = None) -> int:
         """
         Добавить нового ребенка
         
@@ -31,7 +31,8 @@ class ChildrenSettings:
             birth_date=birth_date,
             gender=gender,
             group=group_id,
-            enrollment_date=enrollment_date
+            enrollment_date=enrollment_date,
+            locker_symbol=locker_symbol
         )
         return child.child_id
     
@@ -86,10 +87,10 @@ class ChildrenSettings:
         Args:
             child_id: ID ребенка
             **kwargs: поля для обновления (last_name, first_name, middle_name, 
-                     birth_date, gender, group_id, enrollment_date)
+                     birth_date, gender, group_id, enrollment_date, locker_symbol)
         """
         allowed_fields = ['last_name', 'first_name', 'middle_name', 
-                         'birth_date', 'gender', 'enrollment_date']
+                         'birth_date', 'gender', 'enrollment_date', 'locker_symbol']
         
         updates = {}
         for field, value in kwargs.items():
@@ -124,6 +125,17 @@ class ChildrenSettings:
                    .order_by(Child.last_name, Child.first_name))
         return [self._child_to_dict(child) for child in children]
     
+    def get_used_locker_symbols_in_group(self, group_id: int, exclude_child_id: int = None) -> List[str]:
+        """Получить список используемых символов шкафчиков в группе"""
+        query = Child.select(Child.locker_symbol).where(
+            (Child.group == group_id) & 
+            (Child.locker_symbol.is_null(False))
+        )
+        if exclude_child_id:
+            query = query.where(Child.child_id != exclude_child_id)
+        
+        return [child.locker_symbol for child in query if child.locker_symbol]
+    
     def _child_to_dict(self, child: Child) -> dict:
         """Преобразовать модель ребенка в словарь"""
         result = {
@@ -135,6 +147,7 @@ class ChildrenSettings:
             'gender': child.gender,
             'group_id': child.group_id if child.group else None,
             'enrollment_date': child.enrollment_date.isoformat() if hasattr(child.enrollment_date, 'isoformat') else str(child.enrollment_date),
+            'locker_symbol': child.locker_symbol if hasattr(child, 'locker_symbol') else None,
             'created_at': child.created_at.isoformat() if child.created_at else None
         }
         
